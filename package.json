@@ -1,0 +1,19 @@
+{
+  "name": "elemental-spell-caster",
+  "version": "1.0.0",
+  "description": "Elemental Spell Caster - AI-Powered Motion & Gesture Web Game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "game",
+    "teachable-machine",
+    "tensorflow",
+    "canvas-2d",
+    "dark-fantasy"
+  ],
+  "author": "Antigravity",
+  "license": "MIT"
+}
