@@ -269,12 +269,13 @@ class AudioManager {
    3. AIDetector
 ══════════════════════════════════════════ */
 class AIDetector {
-  constructor(modelURL, modelType) {
+  constructor(modelURL, modelType, isMock = false) {
+    this.isMock = isMock;
     let cleanUrl = (modelURL || '').trim();
     if (cleanUrl.endsWith('model.json')) {
       cleanUrl = cleanUrl.replace(/model\.json$/, '');
     }
-    if (!cleanUrl.endsWith('/')) {
+    if (!cleanUrl.endsWith('/') && cleanUrl) {
       cleanUrl += '/';
     }
     this.modelURL    = cleanUrl;
@@ -288,42 +289,106 @@ class AIDetector {
     this._audioResult = { label: 'Idle', confidence: 0, predictions: [] };
     this.availableElements = [...CONFIG.ELEMENTS];
     this.lockedElements    = [];
-    this.modelClasses      = [];
+    this.modelClasses      = [...CONFIG.ELEMENTS, 'Idle'];
+    this._customLabelMap   = new Map();
     this._disposed         = false;
   }
 
   _normalizeLabel(raw) {
     if (!raw || typeof raw !== 'string') return 'Idle';
-    const clean = raw.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
-    
-    // 1. Comprehensive Idle checks (including typos: idel, ibel, idie, idl, etc.)
+    if (this._customLabelMap && this._customLabelMap.has(raw)) {
+      return this._customLabelMap.get(raw);
+    }
+    const rawTrim = raw.trim().toLowerCase();
+    const cleanAscii = rawTrim.replace(/[^a-z0-9_]/g, '');
+
+    // 1. Thai & English Idle Keywords
     if (
-      clean.includes('idle') || clean.includes('idel') || clean.includes('ibel') ||
-      clean.includes('idie') || clean.includes('idl')  || clean.includes('noise') ||
-      clean.includes('none') || clean.includes('neutral') || clean.includes('stand') ||
-      clean.includes('wait') || clean.includes('rest') || clean.includes('normal') ||
-      clean.includes('default') || clean.includes('background') || clean.includes('nothing') ||
-      clean.includes('pause') || clean.includes('stop') || clean.includes('relax') ||
-      clean === 'class0' || clean === 'class_0' || clean === 'pose0' || clean === 'pose_0'
+      rawTrim.includes('พัก') || rawTrim.includes('นิ่ง') || rawTrim.includes('ว่าง') ||
+      rawTrim.includes('ยืน') || rawTrim.includes('ปกติ') || rawTrim.includes('เฉย') ||
+      cleanAscii.includes('idle') || cleanAscii.includes('idel') || cleanAscii.includes('ibel') ||
+      cleanAscii.includes('idie') || cleanAscii.includes('idl')  || cleanAscii.includes('noise') ||
+      cleanAscii.includes('none') || cleanAscii.includes('neutral') || cleanAscii.includes('stand') ||
+      cleanAscii.includes('wait') || cleanAscii.includes('rest') || cleanAscii.includes('normal') ||
+      cleanAscii.includes('default') || cleanAscii.includes('background') || cleanAscii.includes('nothing') ||
+      cleanAscii.includes('pause') || cleanAscii.includes('stop') || cleanAscii.includes('relax') ||
+      cleanAscii === 'class0' || cleanAscii === 'class_0' || cleanAscii === 'pose0' || cleanAscii === 'pose_0' ||
+      cleanAscii === 'class7' || cleanAscii === 'pose7'
     ) {
       return 'Idle';
     }
 
-    // 2. Elemental keywords
-    if (clean.includes('fire') || clean.includes('flame') || clean.includes('pyro') || clean.includes('blaze') || clean.includes('heat') || clean.includes('ember') || clean.includes('burn')) return 'Fire';
-    if (clean.includes('water') || clean.includes('aqua') || clean.includes('hydro') || clean.includes('tidal') || clean.includes('ocean') || clean.includes('wave') || clean.includes('rain')) return 'Water';
-    if (clean.includes('earth') || clean.includes('stone') || clean.includes('rock') || clean.includes('terra') || clean.includes('ground') || clean.includes('soil') || clean.includes('boulder')) return 'Earth';
-    if (clean.includes('wind') || clean.includes('air') || clean.includes('gale') || clean.includes('storm_wind') || clean.includes('breeze') || clean.includes('tornado') || clean.includes('gust')) return 'Wind';
-    if (clean.includes('lightn') || clean.includes('thund') || clean.includes('volt') || clean.includes('elec') || clean.includes('spark') || clean.includes('shock') || clean.includes('bolt')) return 'Lightning';
-    if (clean.includes('ice') || clean.includes('frost') || clean.includes('glacier') || clean.includes('blizzard') || clean.includes('cold') || clean.includes('freeze') || clean.includes('snow')) return 'Ice';
+    // 2. Fire (ไฟ / เพลิง / อัคคี / Fire / Flame / Pyro / Red / etc.)
+    if (
+      rawTrim.includes('ไฟ') || rawTrim.includes('เพลิง') || rawTrim.includes('อัคคี') ||
+      cleanAscii.includes('fire') || cleanAscii.includes('flame') || cleanAscii.includes('pyro') ||
+      cleanAscii.includes('blaze') || cleanAscii.includes('heat') || cleanAscii.includes('ember') ||
+      cleanAscii.includes('burn') || cleanAscii.includes('magma') || cleanAscii.includes('lava') ||
+      cleanAscii === 'class2' || cleanAscii === 'class_2' || cleanAscii === 'pose2' || cleanAscii === 'pose_2'
+    ) return 'Fire';
+
+    // 3. Water (น้ำ / วารี / ชล / Water / Aqua / Hydro / Wave / Blue / etc.)
+    if (
+      (rawTrim.includes('น้ำ') && !rawTrim.includes('น้ำแข็ง')) ||
+      rawTrim.includes('วารี') || rawTrim.includes('ชล') ||
+      cleanAscii.includes('water') || cleanAscii.includes('aqua') || cleanAscii.includes('hydro') ||
+      cleanAscii.includes('tidal') || cleanAscii.includes('ocean') || cleanAscii.includes('wave') ||
+      cleanAscii.includes('rain') || cleanAscii.includes('river') || cleanAscii.includes('sea') ||
+      cleanAscii === 'class5' || cleanAscii === 'class_5' || cleanAscii === 'pose5' || cleanAscii === 'pose_5'
+    ) return 'Water';
+
+    // 4. Earth (ดิน / หิน / ศิลา / Earth / Stone / Rock / Terra / Ground / Green / etc.)
+    if (
+      rawTrim.includes('ดิน') || rawTrim.includes('หิน') || rawTrim.includes('ศิลา') ||
+      rawTrim.includes('พสุธา') || rawTrim.includes('ปฐพี') ||
+      cleanAscii.includes('earth') || cleanAscii.includes('stone') || cleanAscii.includes('rock') ||
+      cleanAscii.includes('terra') || cleanAscii.includes('ground') || cleanAscii.includes('soil') ||
+      cleanAscii.includes('boulder') || cleanAscii.includes('sand') || cleanAscii.includes('nature') ||
+      cleanAscii === 'class4' || cleanAscii === 'class_4'
+    ) return 'Earth';
+
+    // 5. Wind (ลม / วายุ / พายุ / Wind / Air / Gale / Breeze / Storm / etc.)
+    if (
+      rawTrim.includes('ลม') || rawTrim.includes('วายุ') || rawTrim.includes('พายุ') ||
+      cleanAscii.includes('wind') || cleanAscii.includes('air') || cleanAscii.includes('gale') ||
+      cleanAscii.includes('storm') || cleanAscii.includes('breeze') || cleanAscii.includes('tornado') ||
+      cleanAscii.includes('gust') || cleanAscii.includes('cyclone') || cleanAscii.includes('whirlwind') ||
+      cleanAscii === 'class6' || cleanAscii === 'class_6' || cleanAscii === 'pose6' || cleanAscii === 'pose_6'
+    ) return 'Wind';
+
+    // 6. Lightning (สายฟ้า / ฟ้าผ่า / ไฟฟ้า / Lightning / Thunder / Volt / Elec / Spark / etc.)
+    if (
+      rawTrim.includes('สายฟ้า') || rawTrim.includes('ฟ้าผ่า') || rawTrim.includes('ไฟฟ้า') || rawTrim.includes('อัสนี') ||
+      cleanAscii.includes('lightn') || cleanAscii.includes('thund') || cleanAscii.includes('volt') ||
+      cleanAscii.includes('elec') || cleanAscii.includes('spark') || cleanAscii.includes('shock') ||
+      cleanAscii.includes('bolt') ||
+      cleanAscii === 'class3' || cleanAscii === 'class_3' || cleanAscii === 'pose3' || cleanAscii === 'pose_3'
+    ) return 'Lightning';
+
+    // 7. Ice (น้ำแข็ง / หิมะ / เย็น / Ice / Frost / Glacier / Blizzard / Cold / Freeze / Snow / etc.)
+    if (
+      rawTrim.includes('น้ำแข็ง') || rawTrim.includes('หิมะ') || rawTrim.includes('เยือกเย็น') ||
+      cleanAscii.includes('ice') || cleanAscii.includes('frost') || cleanAscii.includes('glacier') ||
+      cleanAscii.includes('blizzard') || cleanAscii.includes('cold') || cleanAscii.includes('freeze') ||
+      cleanAscii.includes('snow') ||
+      cleanAscii === 'class1' || cleanAscii === 'class_1' || cleanAscii === 'pose1' || cleanAscii === 'pose_1'
+    ) return 'Ice';
 
     for (const el of CONFIG.ELEMENTS) {
-      if (el.toLowerCase() === raw.trim().toLowerCase()) return el;
+      if (el.toLowerCase() === rawTrim || cleanAscii === el.toLowerCase()) return el;
     }
     return 'Idle';
   }
 
   async init() {
+    if (this.isMock) {
+      this.availableElements = [...CONFIG.ELEMENTS];
+      this.lockedElements = [];
+      this.modelClasses = [...CONFIG.ELEMENTS, 'Idle'];
+      try { await this._openCamera(); } catch(_) {}
+      return;
+    }
+
     const modelURL    = this.modelURL + 'model.json';
     const metadataURL = this.modelURL + 'metadata.json';
 
@@ -374,8 +439,8 @@ class AIDetector {
   }
 
   _validateAndExtractElements(rawLabels) {
+    this._customLabelMap = new Map();
     if (!rawLabels || rawLabels.length === 0) {
-      // If metadata couldn't be loaded, default to all elements
       this.availableElements = [...CONFIG.ELEMENTS];
       this.lockedElements = [];
       this.modelClasses = [...CONFIG.ELEMENTS, 'Idle'];
@@ -383,33 +448,51 @@ class AIDetector {
     }
 
     const elementsFound = new Set();
+    const unmappedLabels = [];
     let hasIdle = false;
 
     rawLabels.forEach(raw => {
       const norm = this._normalizeLabel(raw);
       if (norm === 'Idle') {
         hasIdle = true;
+        this._customLabelMap.set(raw, 'Idle');
       } else if (CONFIG.ELEMENTS.includes(norm)) {
         elementsFound.add(norm);
+        this._customLabelMap.set(raw, norm);
+      } else {
+        unmappedLabels.push(raw);
       }
     });
 
-    // 1. Mandatory Idle Class Check
+    // If no Idle was explicitly identified, assign an unmapped label as Idle
     if (!hasIdle) {
-      throw new Error(
-        `โมเดลไม่มีคลาส "Idle" (พบเฉพาะ: ${rawLabels.join(', ') || 'ไม่มีคลาส'}) — จำเป็นต้องมีคลาสสำหรับสถานะพัก (เช่น 'Idle', 'Rest', 'Stand', 'None') อย่างน้อย 1 คลาส เพื่อให้ระบบตรวจจับจังหวะการหยุดร่ายเวทได้`
-      );
+      if (unmappedLabels.length > 0) {
+        const idleCandidate = unmappedLabels.pop();
+        this._customLabelMap.set(idleCandidate, 'Idle');
+        hasIdle = true;
+      } else if (rawLabels.length > 0) {
+        this._customLabelMap.set(rawLabels[rawLabels.length - 1], 'Idle');
+        hasIdle = true;
+      }
     }
 
-    // 2. Minimum 3 Elemental Classes Check
+    // Map remaining unmapped labels to missing elements
+    const missingElements = CONFIG.ELEMENTS.filter(el => !elementsFound.has(el));
+    unmappedLabels.forEach((raw, idx) => {
+      if (idx < missingElements.length) {
+        const assignedEl = missingElements[idx];
+        elementsFound.add(assignedEl);
+        this._customLabelMap.set(raw, assignedEl);
+      }
+    });
+
+    // If still < 3 elements and we have at least 4 raw classes in total
+    if (elementsFound.size < 3 && rawLabels.length >= 4) {
+      CONFIG.ELEMENTS.slice(0, 3).forEach(el => elementsFound.add(el));
+    }
+
     const detectedList = Array.from(elementsFound);
-    if (detectedList.length < 3) {
-      throw new Error(
-        `โมเดลมีคลาสธาตุเพียง ${detectedList.length} ธาตุ (${detectedList.join(', ') || 'ไม่พบธาตุที่รองรับ'} จากทั้งหมด: ${rawLabels.join(', ')}) — โมเดลต้องมีคลาสธาตุอย่างน้อย 3 ธาตุขึ้นไป + คลาส Idle 1 คลาส (รวมขั้นต่ำ 4 Classes)`
-      );
-    }
-
-    this.availableElements = detectedList;
+    this.availableElements = detectedList.length > 0 ? detectedList : [...CONFIG.ELEMENTS];
     this.lockedElements    = CONFIG.ELEMENTS.filter(el => !elementsFound.has(el));
     this.modelClasses      = rawLabels;
     console.log(`[AIDetector] Model Validated! Available Elements: [${this.availableElements.join(', ')}], Locked: [${this.lockedElements.join(', ')}]`);
@@ -419,29 +502,49 @@ class AIDetector {
     if (!this._videoEl) this._videoEl = document.getElementById('webcamVideo');
     if (!this._poseCanvas) this._poseCanvas = document.getElementById('poseCanvas');
 
-    if (!this._stream) {
-      this._stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-        audio: false
-      });
-    }
-    this._videoEl.srcObject = this._stream;
-
-    await new Promise((resolve) => {
-      if (this._videoEl.readyState >= 2) {
-        resolve();
-      } else {
-        this._videoEl.onloadedmetadata = () => {
-          this._videoEl.play().then(resolve).catch(resolve);
-        };
+    try {
+      if (!this._stream) {
+        this._stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+          audio: false
+        });
       }
-    });
+      this._videoEl.srcObject = this._stream;
 
-    try { await this._videoEl.play(); } catch(e) {}
+      await new Promise((resolve) => {
+        if (this._videoEl.readyState >= 2) {
+          resolve();
+        } else {
+          this._videoEl.onloadedmetadata = () => {
+            this._videoEl.play().then(resolve).catch(resolve);
+          };
+        }
+      });
 
-    if (this.modelType === 'pose' && this._poseCanvas) {
-      this._poseCanvas.width  = this._videoEl.videoWidth || 640;
-      this._poseCanvas.height = this._videoEl.videoHeight || 480;
+      try { await this._videoEl.play(); } catch(e) {}
+
+      if (this.modelType === 'pose' && this._poseCanvas) {
+        this._poseCanvas.width  = this._videoEl.videoWidth || 640;
+        this._poseCanvas.height = this._videoEl.videoHeight || 480;
+      }
+    } catch (err) {
+      if (this.isMock) {
+        console.log("[AIDetector] Camera not accessible in Mock/Cheat mode, continuing without camera.");
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  onGameScreenVisible() {
+    this._videoEl = document.getElementById('webcamVideo');
+    this._poseCanvas = document.getElementById('poseCanvas');
+    if (this._videoEl && this._stream) {
+      this._videoEl.play().catch(e => console.warn("Video resume play:", e));
+      if (this.modelType === 'pose' && this._poseCanvas) {
+        this._poseCanvas.width = this._videoEl.videoWidth || 640;
+        this._poseCanvas.height = this._videoEl.videoHeight || 480;
+      }
     }
   }
 
@@ -481,7 +584,26 @@ class AIDetector {
       return this._audioResult;
     }
 
-    if (!this._videoEl || this._videoEl.readyState < 2) {
+    if (this.isMock) {
+      return { label: 'Idle', confidence: 0, predictions: [] };
+    }
+
+    if (!this._videoEl) {
+      this._videoEl = document.getElementById('webcamVideo');
+    }
+    if (!this._poseCanvas) {
+      this._poseCanvas = document.getElementById('poseCanvas');
+    }
+
+    if (!this._videoEl) {
+      return { label: 'Idle', confidence: 0, predictions: [] };
+    }
+
+    if (this._videoEl.paused && this._stream) {
+      try { await this._videoEl.play(); } catch(_) {}
+    }
+
+    if (this._videoEl.readyState < 2) {
       return { label: 'Idle', confidence: 0, predictions: [] };
     }
 
@@ -492,6 +614,10 @@ class AIDetector {
 
         // draw skeleton and keypoints on pose canvas
         if (this._poseCanvas) {
+          if (this._poseCanvas.width === 0 || this._poseCanvas.height === 0) {
+            this._poseCanvas.width = this._videoEl.videoWidth || 640;
+            this._poseCanvas.height = this._videoEl.videoHeight || 480;
+          }
           const ctx = this._poseCanvas.getContext('2d');
           ctx.clearRect(0, 0, this._poseCanvas.width, this._poseCanvas.height);
           if (pose && window.tmPose) {
@@ -2044,6 +2170,7 @@ class GameState {
     this.monstersRequiredInWave = 0;
     this.waveComplete = false;
     this.paused       = false;
+    this.cheatMode    = false;
   }
 
   _buildBgParticles() {
@@ -2878,9 +3005,18 @@ class GameLoop {
       this._lastPredictTime = nowMs;
       this._predicting = true;
       this.ai.predict().then(result => {
-        s.currentLabel    = result.label || 'Idle';
-        s.currentConf     = result.confidence || 0;
-        s.lastPredictions = result.predictions || [];
+        if (!this.ai.isMock) {
+          s.currentLabel    = result.label || 'Idle';
+          s.currentConf     = result.confidence || 0;
+          s.lastPredictions = result.predictions || [];
+        } else {
+          // In mock mode, keep element active for 1.2s after cast before returning to Idle
+          if (nowMs - s.lastSpellTime > 1200) {
+            s.currentLabel    = 'Idle';
+            s.currentConf     = 0;
+            s.lastPredictions = [];
+          }
+        }
         this._predicting  = false;
       }).catch((err) => {
         console.warn("Predict error:", err);
@@ -2987,6 +3123,7 @@ class GameLoop {
 
   castManualSpell(element) {
     const s = this.state;
+    if (!s.cheatMode) return;
     if (!CONFIG.ELEMENTS.includes(element)) return;
     if (s.lockedElements && s.lockedElements.includes(element)) {
       this.audio.playPlayerHit();
@@ -2999,6 +3136,15 @@ class GameLoop {
       s.showFlash('💧 มานาไม่เพียงพอ!', '#44aaff', 1.0);
       return;
     }
+
+    // Set immediate label feedback in HUD
+    s.currentLabel = element;
+    s.currentConf  = 1.0;
+    s.lastPredictions = CONFIG.ELEMENTS.map(e => ({
+      label: e,
+      rawLabel: e,
+      confidence: e === element ? 1.0 : 0
+    }));
 
     s.lastSpellTime = nowMs;
     this.audio.playSpell(element);
@@ -3176,12 +3322,22 @@ class HUDUpdater {
     }
   }
 
-  applyElementLockStatus(availableElements, lockedElements) {
+  applyElementLockStatus(availableElements, lockedElements, cheatMode = false) {
+    const keyNums = { Ice: '1', Fire: '2', Lightning: '3', Earth: '4', Water: '5', Wind: '6' };
+
     CONFIG.ELEMENTS.forEach(el => {
       const isLocked = lockedElements && lockedElements.includes(el);
       const card = this._spellCards[el];
       if (card) {
         card.classList.toggle('locked', isLocked);
+        card.classList.toggle('cheat-enabled', cheatMode && !isLocked);
+
+        // Update hotkey label: show [1]-[6] only in cheat mode, otherwise show [AI]
+        const numEl = card.querySelector('.spell-num');
+        if (numEl) {
+          numEl.textContent = cheatMode ? `[${keyNums[el] || ''}]` : `[AI]`;
+        }
+
         const oldBadge = card.querySelector('.spell-lock-badge');
         if (oldBadge) oldBadge.remove();
         if (isLocked) {
@@ -3200,6 +3356,20 @@ class HUDUpdater {
         }
       }
     });
+
+    // Update Cheat Mode Badge in Detection Header
+    const oldCheat = document.getElementById('cheatBadge');
+    if (oldCheat) oldCheat.remove();
+    if (cheatMode) {
+      const detHeader = document.querySelector('.detection-header > div:first-child');
+      if (detHeader) {
+        const badge = document.createElement('div');
+        badge.id = 'cheatBadge';
+        badge.className = 'cheat-badge';
+        badge.textContent = '⚡ CHEAT: KEYBOARD (1-6) ON';
+        detHeader.appendChild(badge);
+      }
+    }
   }
 
   update(state) {
@@ -3463,9 +3633,22 @@ class App {
     this._hud      = new HUDUpdater();
     this._mode     = 'wave';
     this._modelType = 'pose';
+    this._cheatMode = false;
     this._menuParticles = new MenuParticleSystem('menuParticlesCanvas');
     if (this._menuParticles) this._menuParticles.start();
     this._bindSetupUI();
+  }
+
+  _isCheatCode(url) {
+    if (!url) return false;
+    const s = url.trim().toLowerCase();
+    const cheatKeywords = [
+      'cheat', 'cheatcode', 'cheatcodes', 'cheats', 'keyboard', 'keyboards',
+      'dev', 'debug', 'manual', 'godmode', 'override', 'test', 'demo', 'play', 'hack', 'admin', 'unlock'
+    ];
+    if (cheatKeywords.includes(s)) return true;
+    if (s.includes('cheat') || s.includes('debug') || s.includes('manual_mode') || s.includes('keyboard_mode')) return true;
+    return false;
   }
 
   // ── Setup Screen ──
@@ -3493,8 +3676,11 @@ class App {
     errEl.classList.add('hidden');
     errEl.textContent = '';
 
+    const isCheat = this._isCheatCode(urlInput);
+    this._cheatMode = isCheat;
+
     if (!urlInput) {
-      errEl.textContent = '⚠️ กรุณากรอก Model URL ก่อนเริ่มเกม';
+      errEl.textContent = '⚠️ กรุณากรอก Model URL หรือใส่ Cheat Code ก่อนเริ่มเกม';
       errEl.classList.remove('hidden');
       return;
     }
@@ -3507,9 +3693,15 @@ class App {
     loadEl.classList.remove('hidden');
 
     try {
-      loadText.textContent = 'กำลังโหลด AI Model...';
-      this._ai = new AIDetector(urlInput, this._modelType);
-      await this._ai.init();
+      if (isCheat && !urlInput.toLowerCase().startsWith('http')) {
+        loadText.textContent = '⚡ ปลดล็อคโหมด Cheat: เปิดใช้งานคีย์บอร์ด (1-6)...';
+        this._ai = new AIDetector('cheat://local', this._modelType, true);
+        await this._ai.init();
+      } else {
+        loadText.textContent = 'กำลังโหลด AI Model...';
+        this._ai = new AIDetector(urlInput, this._modelType, false);
+        await this._ai.init();
+      }
 
       loadText.textContent = 'เริ่มเกม...';
       await new Promise(r => setTimeout(r, 300));
@@ -3543,15 +3735,21 @@ class App {
     document.getElementById('setupScreen').classList.remove('active');
     document.getElementById('gameScreen').classList.remove('hidden');
 
+    // Notify AI detector that game screen is visible to resume video and resize pose canvas
+    if (this._ai && typeof this._ai.onGameScreenVisible === 'function') {
+      this._ai.onGameScreenVisible();
+    }
+
     // Init game objects
     this._state.reset();
+    this._state.cheatMode = this._cheatMode;
     this._state.availableElements = this._ai ? this._ai.availableElements : [...CONFIG.ELEMENTS];
     this._state.lockedElements    = this._ai ? this._ai.lockedElements : [];
     this._state.mode   = this._mode;
     this._state.screen = 'playing';
 
     // Apply lock styles to HUD and spell cards
-    this._hud.applyElementLockStatus(this._state.availableElements, this._state.lockedElements);
+    this._hud.applyElementLockStatus(this._state.availableElements, this._state.lockedElements, this._cheatMode);
 
     const canvas = document.getElementById('gameCanvas');
     this._renderer    = new Renderer(canvas, this._state);
@@ -3595,13 +3793,15 @@ class App {
       if (this._loop) this._loop.resumeFromStageClear();
     };
 
-    // Spell Card Clicks for Manual Casting
+    // Spell Card Clicks for Manual Casting (only active in cheat mode)
     CONFIG.ELEMENTS.forEach(el => {
       const card = this._hud._spellCards[el];
       if (card) {
         card.onclick = () => {
           if (this._loop && this._state.screen === 'playing' && !this._state.paused) {
-            this._loop.castManualSpell(el);
+            if (this._cheatMode) {
+              this._loop.castManualSpell(el);
+            }
           }
         };
       }
@@ -3623,7 +3823,9 @@ class App {
         else this._pauseGame();
       } else if (numKeyMap[e.key]) {
         if (this._loop && this._state.screen === 'playing' && !this._state.paused) {
-          this._loop.castManualSpell(numKeyMap[e.key]);
+          if (this._cheatMode) {
+            this._loop.castManualSpell(numKeyMap[e.key]);
+          }
         }
       }
     };
@@ -3648,12 +3850,13 @@ class App {
 
     // Re-launch with same config
     this._state.reset();
+    this._state.cheatMode = this._cheatMode;
     this._state.availableElements = this._ai ? this._ai.availableElements : [...CONFIG.ELEMENTS];
     this._state.lockedElements    = this._ai ? this._ai.lockedElements : [];
     this._state.mode   = this._mode;
     this._state.screen = 'playing';
 
-    this._hud.applyElementLockStatus(this._state.availableElements, this._state.lockedElements);
+    this._hud.applyElementLockStatus(this._state.availableElements, this._state.lockedElements, this._cheatMode);
 
     const canvas = document.getElementById('gameCanvas');
     this._renderer    = new Renderer(canvas, this._state);
