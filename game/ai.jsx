@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
    AIDetector — Teachable Machine Pose / Image / Audio
-   With multi-language support, cache-busting, and skeleton rendering
+   Camera handling with stream auto-recovery, Skeleton drawing,
+   Thai language normalization & cache-busting
 ═══════════════════════════════════════════════════════════════ */
 
 import { CONFIG } from './config.jsx';
@@ -130,7 +131,11 @@ export class AIDetector {
       this.availableElements = [...CONFIG.ELEMENTS];
       this.lockedElements = [];
       this.modelClasses = [...CONFIG.ELEMENTS, 'Idle'];
-      try { await this._openCamera(); } catch(_) {}
+      try {
+        await this._openCamera();
+      } catch (e) {
+        console.warn("[AIDetector] Camera in mock mode:", e);
+      }
       return;
     }
 
@@ -257,17 +262,30 @@ export class AIDetector {
 
   async _openCamera() {
     if (typeof window === 'undefined') return;
-    if (!this._videoEl) this._videoEl = document.getElementById('webcamVideo');
-    if (!this._poseCanvas) this._poseCanvas = document.getElementById('poseCanvas');
+    if (!this._videoEl && typeof document !== 'undefined') {
+      this._videoEl = document.getElementById('webcamVideo');
+    }
+    if (!this._poseCanvas && typeof document !== 'undefined') {
+      this._poseCanvas = document.getElementById('poseCanvas');
+    }
 
     try {
       if (!this._stream) {
-        this._stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-          audio: false
-        });
+        try {
+          this._stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+            audio: false
+          });
+        } catch (fallbackErr) {
+          // Fallback to generic video constraint
+          this._stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false
+          });
+        }
       }
-      if (this._videoEl) {
+
+      if (this._videoEl && this._stream) {
         this._videoEl.srcObject = this._stream;
 
         await new Promise((resolve) => {
@@ -277,12 +295,13 @@ export class AIDetector {
             this._videoEl.onloadedmetadata = () => {
               this._videoEl.play().then(resolve).catch(resolve);
             };
+            setTimeout(resolve, 800);
           }
         });
 
         try { await this._videoEl.play(); } catch(e) {}
 
-        if (this.modelType === 'pose' && this._poseCanvas) {
+        if (this._poseCanvas) {
           this._poseCanvas.width  = this._videoEl.videoWidth || 640;
           this._poseCanvas.height = this._videoEl.videoHeight || 480;
         }
@@ -305,10 +324,37 @@ export class AIDetector {
     }
 
     if (this._videoEl && this._stream) {
+      if (this._videoEl.srcObject !== this._stream) {
+        this._videoEl.srcObject = this._stream;
+      }
       this._videoEl.play().catch(e => console.warn("Video resume play:", e));
       if (this.modelType === 'pose' && this._poseCanvas) {
         this._poseCanvas.width = this._videoEl.videoWidth || 640;
         this._poseCanvas.height = this._videoEl.videoHeight || 480;
+      }
+    } else if (!this._stream && (this.modelType === 'pose' || this.modelType === 'image' || this.isMock)) {
+      this._openCamera().catch(e => console.warn("Camera init on game screen:", e));
+    }
+  }
+
+  async _ensureVideoReady() {
+    if (typeof document !== 'undefined') {
+      if (!this._videoEl) this._videoEl = document.getElementById('webcamVideo');
+      if (!this._poseCanvas) this._poseCanvas = document.getElementById('poseCanvas');
+    }
+
+    if (this._videoEl && this._stream) {
+      if (this._videoEl.srcObject !== this._stream) {
+        this._videoEl.srcObject = this._stream;
+      }
+      if (this._videoEl.paused) {
+        try { await this._videoEl.play(); } catch(_) {}
+      }
+      if (this.modelType === 'pose' && this._poseCanvas && this._videoEl.videoWidth > 0) {
+        if (this._poseCanvas.width !== this._videoEl.videoWidth || this._poseCanvas.height !== this._videoEl.videoHeight) {
+          this._poseCanvas.width = this._videoEl.videoWidth;
+          this._poseCanvas.height = this._videoEl.videoHeight;
+        }
       }
     }
   }
@@ -351,40 +397,27 @@ export class AIDetector {
     }
 
     if (this.isMock) {
+      await this._ensureVideoReady();
       return { label: 'Idle', confidence: 0, predictions: [] };
     }
 
-    if (typeof document !== 'undefined') {
-      if (!this._videoEl) this._videoEl = document.getElementById('webcamVideo');
-      if (!this._poseCanvas) this._poseCanvas = document.getElementById('poseCanvas');
-    }
+    await this._ensureVideoReady();
 
-    if (!this._videoEl) {
-      return { label: 'Idle', confidence: 0, predictions: [] };
-    }
-
-    if (this._videoEl.paused && this._stream) {
-      try { await this._videoEl.play(); } catch(_) {}
-    }
-
-    if (this._videoEl.readyState < 2) {
+    if (!this._videoEl || !this._stream || this._videoEl.readyState < 2) {
       return { label: 'Idle', confidence: 0, predictions: [] };
     }
 
     try {
       if (this.modelType === 'pose') {
+        if (!this._model) return { label: 'Idle', confidence: 0, predictions: [] };
         const { pose, posenetOutput } = await this._model.estimatePose(this._videoEl, false);
         const prediction = await this._model.predict(posenetOutput);
 
         if (this._poseCanvas) {
-          if (this._poseCanvas.width === 0 || this._poseCanvas.height === 0) {
-            this._poseCanvas.width = this._videoEl.videoWidth || 640;
-            this._poseCanvas.height = this._videoEl.videoHeight || 480;
-          }
           const ctx = this._poseCanvas.getContext('2d');
           ctx.clearRect(0, 0, this._poseCanvas.width, this._poseCanvas.height);
           if (pose && typeof window !== 'undefined' && window.tmPose) {
-            const minPartConfidence = 0.5;
+            const minPartConfidence = 0.4;
             if (typeof window.tmPose.drawKeypoints === 'function') {
               window.tmPose.drawKeypoints(pose.keypoints, minPartConfidence, ctx);
             }
@@ -396,6 +429,7 @@ export class AIDetector {
         return this._formatPredictions(prediction);
 
       } else if (this.modelType === 'image') {
+        if (!this._model) return { label: 'Idle', confidence: 0, predictions: [] };
         const prediction = await this._model.predict(this._videoEl);
         return this._formatPredictions(prediction);
       }

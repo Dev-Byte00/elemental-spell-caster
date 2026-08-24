@@ -42,6 +42,7 @@ export function AIPanel({ state, modelType, videoRef, poseCanvasRef }) {
         ) : (
           <div className="relative w-full h-full">
             <video
+              id="webcamVideo"
               ref={videoRef}
               autoPlay
               playsInline
@@ -49,6 +50,7 @@ export function AIPanel({ state, modelType, videoRef, poseCanvasRef }) {
               className="w-full h-full object-cover scale-x-[-1]"
             />
             <canvas
+              id="poseCanvas"
               ref={poseCanvasRef}
               className="absolute inset-0 w-full h-full object-cover pointer-events-none scale-x-[-1]"
             />
