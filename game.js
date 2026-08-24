@@ -2936,7 +2936,123 @@ class GameLoop {
   }
 
   _trySpellCast(nowMs) {
-    const s = th    // Update wave label
+    const s = this.state;
+    const label = s.currentLabel;
+    const conf  = s.currentConf;
+
+    if (!CONFIG.ELEMENTS.includes(label)) return;
+    if (s.lockedElements && s.lockedElements.includes(label)) return; // Ignore locked elements!
+    if (conf < CONFIG.CONFIDENCE_THRESHOLD) return;
+    if (nowMs - s.lastSpellTime < CONFIG.SPELL_COOLDOWN_MS) return;
+    if (!s.useMana(CONFIG.SPELL_MANA_COST)) return;
+
+    s.lastSpellTime = nowMs;
+    this.audio.playSpell(label);
+
+    // Find closest monster to crosshair
+    const hitMonster = this._findTarget();
+
+    if (hitMonster) {
+      const mult = ElementSystem.getDamageMultiplier(label, hitMonster.element);
+      const baseDmg = 20 + s.wave * 2;
+      const dmg = hitMonster.takeDamage(baseDmg * mult);
+
+      // Effect at monster screen position
+      const mx = hitMonster.x * CONFIG.CANVAS_W;
+      const my = CONFIG.CANVAS_H * 0.55;
+      s.effects.push(new SpellEffect({ element: label, targetX: mx, targetY: my }));
+
+      if (hitMonster.isDead) {
+        this.audio.playMonsterDeath();
+        const pts = Math.round(hitMonster.getScoreValue() * mult);
+        s.addScore(pts);
+        s.totalKills++;
+        s.monstersDefeatedInWave++;
+
+        const effText = ElementSystem.getEffectivenessText(mult);
+        if (effText) s.showFlash(`${effText} +${pts}`, CONFIG.ELEMENT_COLORS[label], 1.5);
+        else s.showFlash(`+${pts}`, CONFIG.ELEMENT_COLORS[label], 0.9);
+      } else {
+        this.audio.playMonsterHit(hitMonster.element);
+        if (mult >= 2) s.showFlash('⚡ x2!', CONFIG.ELEMENT_COLORS[label], 0.7);
+        else if (mult <= 0.5) s.showFlash('🛡️ x0.5', '#888888', 0.7);
+      }
+    } else {
+      // Miss — still show effect at crosshair
+      const cx = CONFIG.CANVAS_W / 2;
+      const cy = CONFIG.CANVAS_H * 0.45;
+      s.effects.push(new SpellEffect({ element: label, targetX: cx, targetY: cy }));
+    }
+  }
+
+  castManualSpell(element) {
+    const s = this.state;
+    if (!CONFIG.ELEMENTS.includes(element)) return;
+    if (s.lockedElements && s.lockedElements.includes(element)) {
+      this.audio.playPlayerHit();
+      s.showFlash(`🔒 ธาตุ ${element.toUpperCase()} ถูกล็อค (ไม่มีใน AI Model)`, '#ff6666', 1.4);
+      return;
+    }
+    const nowMs = performance.now();
+    if (nowMs - s.lastSpellTime < 220) return;
+    if (!s.useMana(CONFIG.SPELL_MANA_COST)) {
+      s.showFlash('💧 มานาไม่เพียงพอ!', '#44aaff', 1.0);
+      return;
+    }
+
+    s.lastSpellTime = nowMs;
+    this.audio.playSpell(element);
+
+    const hitMonster = this._findTarget();
+    if (hitMonster) {
+      const mult = ElementSystem.getDamageMultiplier(element, hitMonster.element);
+      const baseDmg = 20 + s.wave * 2;
+      const dmg = hitMonster.takeDamage(baseDmg * mult);
+
+      const mx = hitMonster.x * CONFIG.CANVAS_W;
+      const my = CONFIG.CANVAS_H * 0.55;
+      s.effects.push(new SpellEffect({ element: element, targetX: mx, targetY: my }));
+
+      if (hitMonster.isDead) {
+        this.audio.playMonsterDeath();
+        const pts = Math.round(hitMonster.getScoreValue() * mult);
+        s.addScore(pts);
+        s.totalKills++;
+        s.monstersDefeatedInWave++;
+
+        const effText = ElementSystem.getEffectivenessText(mult);
+        if (effText) s.showFlash(`${effText} +${pts}`, CONFIG.ELEMENT_COLORS[element], 1.5);
+        else s.showFlash(`+${pts}`, CONFIG.ELEMENT_COLORS[element], 0.9);
+      } else {
+        this.audio.playMonsterHit(hitMonster.element);
+        if (mult >= 2) s.showFlash('⚡ x2!', CONFIG.ELEMENT_COLORS[element], 0.7);
+        else if (mult <= 0.5) s.showFlash('🛡️ x0.5', '#888888', 0.7);
+      }
+    } else {
+      const cx = CONFIG.CANVAS_W / 2;
+      const cy = CONFIG.CANVAS_H * 0.45;
+      s.effects.push(new SpellEffect({ element: element, targetX: cx, targetY: cy }));
+    }
+  }
+
+  _findTarget() {
+    // Target the largest (closest/most dangerous) monster that is not dying
+    const alive = this.state.monsters.filter(m => !m.isDying && !m.isDead);
+    if (!alive.length) return null;
+    return alive.reduce((best, m) => m.scale > best.scale ? m : best, alive[0]);
+  }
+
+  _initWave() {
+    const s = this.state;
+    const cfg = this.waveManager.getWaveConfig(s.wave, s.mode, s.stage);
+    this._spawnQueue = this.waveManager.buildMonsterQueue(cfg);
+    s.monstersRequiredInWave = cfg.total;
+    s.monstersDefeatedInWave = 0;
+    s.waveComplete = false;
+    this._spawnTimer = 0;
+    this._spawnInterval = Math.max(600, 1400 - s.wave * 30);
+
+    // Update wave label
     document.getElementById('waveLabel').textContent =
       s.mode === 'story'
         ? `${CONFIG.STORY_STAGES_DATA[s.stage].name}`
