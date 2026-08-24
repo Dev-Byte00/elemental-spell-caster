@@ -1,0 +1,3 @@
+@echo off
+echo Building Next.js Production App...
+npm.cmd run build
