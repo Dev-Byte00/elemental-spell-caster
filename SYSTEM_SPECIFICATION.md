@@ -138,6 +138,7 @@ graph TD
 * **Grand Sanctum Seal**: ตราประทับเวทมนตร์และดาว 6 แฉกหมุนวน
 * **Multi-Layer Magic Circle Array**: วงเวทมนตร์โบราณหมุนสวนทางกัน 4 ชั้นที่ฉากหลัง
 * **Flowing Ley-Line Streams**: ลำแสงพลังงานเวทมนตร์วิ่งวนรอบกรอบหน้าจอ 4 ด้าน
+* **Ambient Magic Embers (MenuParticleSystem)**: สะเก็ดละอองเวทมนตร์ลอยเอื่อยๆ นุ่มนวล เปล่งประกายทอง ไซอัน และไวโอเล็ตที่ฉากหลังหน้าเมนู
 * **Custom SVG Icons**: แทนที่อีโมจิด้วยเวกเตอร์ไอคอนเฉพาะตัว (Pose Sigil, Mystic Eye, Soundwave Rune, Shields & Grimoires)
 
 #### แถบสถานะภายในเกม (In-Game Top HUD)

@@ -2936,123 +2936,7 @@ class GameLoop {
   }
 
   _trySpellCast(nowMs) {
-    const s = this.state;
-    const label = s.currentLabel;
-    const conf  = s.currentConf;
-
-    if (!CONFIG.ELEMENTS.includes(label)) return;
-    if (s.lockedElements && s.lockedElements.includes(label)) return; // Ignore locked elements!
-    if (conf < CONFIG.CONFIDENCE_THRESHOLD) return;
-    if (nowMs - s.lastSpellTime < CONFIG.SPELL_COOLDOWN_MS) return;
-    if (!s.useMana(CONFIG.SPELL_MANA_COST)) return;
-
-    s.lastSpellTime = nowMs;
-    this.audio.playSpell(label);
-
-    // Find closest monster to crosshair
-    const hitMonster = this._findTarget();
-
-    if (hitMonster) {
-      const mult = ElementSystem.getDamageMultiplier(label, hitMonster.element);
-      const baseDmg = 20 + s.wave * 2;
-      const dmg = hitMonster.takeDamage(baseDmg * mult);
-
-      // Effect at monster screen position
-      const mx = hitMonster.x * CONFIG.CANVAS_W;
-      const my = CONFIG.CANVAS_H * 0.55;
-      s.effects.push(new SpellEffect({ element: label, targetX: mx, targetY: my }));
-
-      if (hitMonster.isDead) {
-        this.audio.playMonsterDeath();
-        const pts = Math.round(hitMonster.getScoreValue() * mult);
-        s.addScore(pts);
-        s.totalKills++;
-        s.monstersDefeatedInWave++;
-
-        const effText = ElementSystem.getEffectivenessText(mult);
-        if (effText) s.showFlash(`${effText} +${pts}`, CONFIG.ELEMENT_COLORS[label], 1.5);
-        else s.showFlash(`+${pts}`, CONFIG.ELEMENT_COLORS[label], 0.9);
-      } else {
-        this.audio.playMonsterHit(hitMonster.element);
-        if (mult >= 2) s.showFlash('⚡ x2!', CONFIG.ELEMENT_COLORS[label], 0.7);
-        else if (mult <= 0.5) s.showFlash('🛡️ x0.5', '#888888', 0.7);
-      }
-    } else {
-      // Miss — still show effect at crosshair
-      const cx = CONFIG.CANVAS_W / 2;
-      const cy = CONFIG.CANVAS_H * 0.45;
-      s.effects.push(new SpellEffect({ element: label, targetX: cx, targetY: cy }));
-    }
-  }
-
-  castManualSpell(element) {
-    const s = this.state;
-    if (!CONFIG.ELEMENTS.includes(element)) return;
-    if (s.lockedElements && s.lockedElements.includes(element)) {
-      this.audio.playPlayerHit();
-      s.showFlash(`🔒 ธาตุ ${element.toUpperCase()} ถูกล็อค (ไม่มีใน AI Model)`, '#ff6666', 1.4);
-      return;
-    }
-    const nowMs = performance.now();
-    if (nowMs - s.lastSpellTime < 220) return;
-    if (!s.useMana(CONFIG.SPELL_MANA_COST)) {
-      s.showFlash('💧 มานาไม่เพียงพอ!', '#44aaff', 1.0);
-      return;
-    }
-
-    s.lastSpellTime = nowMs;
-    this.audio.playSpell(element);
-
-    const hitMonster = this._findTarget();
-    if (hitMonster) {
-      const mult = ElementSystem.getDamageMultiplier(element, hitMonster.element);
-      const baseDmg = 20 + s.wave * 2;
-      const dmg = hitMonster.takeDamage(baseDmg * mult);
-
-      const mx = hitMonster.x * CONFIG.CANVAS_W;
-      const my = CONFIG.CANVAS_H * 0.55;
-      s.effects.push(new SpellEffect({ element: element, targetX: mx, targetY: my }));
-
-      if (hitMonster.isDead) {
-        this.audio.playMonsterDeath();
-        const pts = Math.round(hitMonster.getScoreValue() * mult);
-        s.addScore(pts);
-        s.totalKills++;
-        s.monstersDefeatedInWave++;
-
-        const effText = ElementSystem.getEffectivenessText(mult);
-        if (effText) s.showFlash(`${effText} +${pts}`, CONFIG.ELEMENT_COLORS[element], 1.5);
-        else s.showFlash(`+${pts}`, CONFIG.ELEMENT_COLORS[element], 0.9);
-      } else {
-        this.audio.playMonsterHit(hitMonster.element);
-        if (mult >= 2) s.showFlash('⚡ x2!', CONFIG.ELEMENT_COLORS[element], 0.7);
-        else if (mult <= 0.5) s.showFlash('🛡️ x0.5', '#888888', 0.7);
-      }
-    } else {
-      const cx = CONFIG.CANVAS_W / 2;
-      const cy = CONFIG.CANVAS_H * 0.45;
-      s.effects.push(new SpellEffect({ element: element, targetX: cx, targetY: cy }));
-    }
-  }
-
-  _findTarget() {
-    // Target the largest (closest/most dangerous) monster that is not dying
-    const alive = this.state.monsters.filter(m => !m.isDying && !m.isDead);
-    if (!alive.length) return null;
-    return alive.reduce((best, m) => m.scale > best.scale ? m : best, alive[0]);
-  }
-
-  _initWave() {
-    const s = this.state;
-    const cfg = this.waveManager.getWaveConfig(s.wave, s.mode, s.stage);
-    this._spawnQueue = this.waveManager.buildMonsterQueue(cfg);
-    s.monstersRequiredInWave = cfg.total;
-    s.monstersDefeatedInWave = 0;
-    s.waveComplete = false;
-    this._spawnTimer = 0;
-    this._spawnInterval = Math.max(600, 1400 - s.wave * 30);
-
-    // Update wave label
+    const s = th    // Update wave label
     document.getElementById('waveLabel').textContent =
       s.mode === 'story'
         ? `${CONFIG.STORY_STAGES_DATA[s.stage].name}`
@@ -3133,7 +3017,7 @@ class GameLoop {
 }
 
 /* ══════════════════════════════════════════
-   HUDUpdater (helper)
+   10. HUDUpdater (helper)
 ══════════════════════════════════════════ */
 class HUDUpdater {
   constructor() {
@@ -3243,7 +3127,7 @@ class HUDUpdater {
     const isActive = isSpell && !isLocked && conf >= CONFIG.CONFIDENCE_THRESHOLD;
     const color = CONFIG.ELEMENT_COLORS[el] || '#8899bb';
 
-    // Show recognized element name in real-time (Ensuring Idle is never shown as Ibel or Waiting)
+    // Show recognized element name in real-time
     if (el && el !== 'Idle' && isSpell) {
       if (isLocked) {
         this._elemName.textContent = `${el.toUpperCase()} (LOCKED)`;
@@ -3265,7 +3149,6 @@ class HUDUpdater {
 
     // Per-element confidence bars
     if (state.lastPredictions && state.lastPredictions.length > 0) {
-      // Reset all non-locked bars to 0 first
       CONFIG.ELEMENTS.forEach(e => {
         const locked = state.lockedElements && state.lockedElements.includes(e);
         if (!locked) {
@@ -3287,7 +3170,6 @@ class HUDUpdater {
         }
       });
     } else {
-      // Single prediction fallback
       CONFIG.ELEMENTS.forEach(e => {
         const locked = state.lockedElements && state.lockedElements.includes(e);
         if (!locked) {
@@ -3308,7 +3190,151 @@ class HUDUpdater {
 }
 
 /* ══════════════════════════════════════════
-   11. App — Entry Point + UI Wiring
+   11. MenuParticleSystem (Subtle Ambient Magic Embers)
+══════════════════════════════════════════ */
+class MenuParticleSystem {
+  constructor(canvasId) {
+    this.canvas = document.getElementById(canvasId);
+    if (!this.canvas) return;
+    this.ctx = this.canvas.getContext('2d');
+    this.particles = [];
+    this.numParticles = 55;
+    this.running = false;
+    this._rafId = null;
+    this._resizeHandler = () => this.resize();
+    window.addEventListener('resize', this._resizeHandler);
+    this.resize();
+    this._initParticles();
+  }
+
+  resize() {
+    if (!this.canvas) return;
+    this.width = this.canvas.width = window.innerWidth;
+    this.height = this.canvas.height = window.innerHeight;
+  }
+
+  _initParticles() {
+    const colors = [
+      { r: 255, g: 215, b: 0, glow: 'rgba(255, 215, 0, ' },      // Gold
+      { r: 245, g: 184, b: 66, glow: 'rgba(245, 184, 66, ' },    // Amber
+      { r: 0, g: 229, b: 255, glow: 'rgba(0, 229, 255, ' },      // Cyan
+      { r: 64, g: 200, b: 255, glow: 'rgba(64, 200, 255, ' },    // Ice Blue
+      { r: 200, g: 128, b: 255, glow: 'rgba(200, 128, 255, ' }   // Soft Violet
+    ];
+
+    this.particles = Array.from({ length: this.numParticles }, () => {
+      const col = colors[Math.floor(Math.random() * colors.length)];
+      return {
+        x: Math.random() * (this.width || window.innerWidth),
+        y: Math.random() * (this.height || window.innerHeight),
+        radius: 0.8 + Math.random() * 2.2,
+        speedY: -(0.25 + Math.random() * 0.65),
+        speedX: (Math.random() - 0.5) * 0.25,
+        swaySpeed: 0.012 + Math.random() * 0.025,
+        swayRadius: 0.4 + Math.random() * 0.8,
+        swayAngle: Math.random() * Math.PI * 2,
+        alpha: 0.15 + Math.random() * 0.55,
+        targetAlpha: 0.2 + Math.random() * 0.6,
+        alphaSpeed: 0.005 + Math.random() * 0.015,
+        color: col,
+        flare: Math.random() < 0.25
+      };
+    });
+  }
+
+  start() {
+    if (this.running) return;
+    this.running = true;
+    this.resize();
+    const loop = () => {
+      if (!this.running) return;
+      this.update();
+      this.draw();
+      this._rafId = requestAnimationFrame(loop);
+    };
+    this._rafId = requestAnimationFrame(loop);
+  }
+
+  stop() {
+    this.running = false;
+    if (this._rafId) {
+      cancelAnimationFrame(this._rafId);
+      this._rafId = null;
+    }
+  }
+
+  update() {
+    const w = this.width || window.innerWidth;
+    const h = this.height || window.innerHeight;
+
+    this.particles.forEach(p => {
+      p.y += p.speedY;
+      p.swayAngle += p.swaySpeed;
+      p.x += p.speedX + Math.sin(p.swayAngle) * p.swayRadius;
+
+      // Twinkle alpha
+      p.alpha += (p.targetAlpha - p.alpha) * p.alphaSpeed;
+      if (Math.abs(p.targetAlpha - p.alpha) < 0.04) {
+        p.targetAlpha = 0.15 + Math.random() * 0.65;
+      }
+
+      // Recycle at top or sides
+      if (p.y < -20) {
+        p.y = h + 10;
+        p.x = Math.random() * w;
+        p.alpha = 0.05;
+      }
+      if (p.x < -20) p.x = w + 10;
+      else if (p.x > w + 20) p.x = -10;
+    });
+  }
+
+  draw() {
+    if (!this.ctx) return;
+    this.ctx.clearRect(0, 0, this.width, this.height);
+
+    this.particles.forEach(p => {
+      const a = Math.max(0, Math.min(1, p.alpha));
+      const col = p.color;
+
+      // Radial outer soft glow
+      const grad = this.ctx.createRadialGradient(
+        p.x, p.y, 0,
+        p.x, p.y, p.radius * 3.5
+      );
+      grad.addColorStop(0, `${col.glow}${a * 0.9})`);
+      grad.addColorStop(0.4, `${col.glow}${a * 0.35})`);
+      grad.addColorStop(1, `${col.glow}0)`);
+
+      this.ctx.fillStyle = grad;
+      this.ctx.beginPath();
+      this.ctx.arc(p.x, p.y, p.radius * 3.5, 0, Math.PI * 2);
+      this.ctx.fill();
+
+      // Bright core
+      this.ctx.fillStyle = `rgba(255, 255, 255, ${a * 0.95})`;
+      this.ctx.beginPath();
+      this.ctx.arc(p.x, p.y, p.radius * 0.7, 0, Math.PI * 2);
+      this.ctx.fill();
+
+      // Subtle 4-point sparkle star for flared embers
+      if (p.flare && a > 0.4) {
+        this.ctx.strokeStyle = `rgba(255, 255, 255, ${a * 0.6})`;
+        this.ctx.lineWidth = 0.75;
+        this.ctx.beginPath();
+        const len = p.radius * 2.8;
+        this.ctx.moveTo(p.x - len, p.y);
+        this.ctx.lineTo(p.x + len, p.y);
+        this.ctx.moveTo(p.x, p.y - len);
+        this.ctx.lineTo(p.x, p.y + len);
+        this.ctx.stroke();
+      }
+    });
+  }
+}
+
+/* ══════════════════════════════════════════
+   12. App — Entry Point + UI Wiring
 ══════════════════════════════════════════ */
 class App {
   constructor() {
@@ -3321,6 +3347,8 @@ class App {
     this._hud      = new HUDUpdater();
     this._mode     = 'wave';
     this._modelType = 'pose';
+    this._menuParticles = new MenuParticleSystem('menuParticlesCanvas');
+    if (this._menuParticles) this._menuParticles.start();
     this._bindSetupUI();
   }
 
@@ -3382,6 +3410,11 @@ class App {
   }
 
   _launchGame() {
+    // Stop menu background particles during active gameplay
+    if (this._menuParticles) {
+      this._menuParticles.stop();
+    }
+
     // Show/hide webcam vs mic — new HTML uses #webcamContainer and #micContainer inside #cameraBox
     const isAudio = this._modelType === 'audio';
     const webcamInner = document.getElementById('webcamContainer');
@@ -3534,6 +3567,11 @@ class App {
     const setup = document.getElementById('setupScreen');
     setup.classList.remove('hidden');
     setup.classList.add('active');
+
+    // Resume ambient menu embers
+    if (this._menuParticles) {
+      this._menuParticles.start();
+    }
 
     // Re-enable start button
     document.getElementById('startBtn').disabled = false;
