@@ -389,16 +389,8 @@ class AIDetector {
       return;
     }
 
-    // Cache-busting timestamp ensures browser & CDN never serve stale cached model/metadata when updating link
-    const nocache = '_t=' + Date.now();
-    const modelURL    = this.modelURL + 'model.json?' + nocache;
-    const metadataURL = this.modelURL + 'metadata.json?' + nocache;
-
-    // Fetch latest fresh metadata directly from server FIRST to bypass any local model instance cache
-    const rawLabels = await this._fetchModelLabels(metadataURL);
-
-    // Validate classes before initializing heavy TFJS model
-    this._validateAndExtractElements(rawLabels);
+    const modelURL    = this.modelURL + 'model.json';
+    const metadataURL = this.modelURL + 'metadata.json';
 
     if (this.modelType === 'pose') {
       if (!window.tmPose) throw new Error('Teachable Machine Pose library not loaded.');
@@ -418,31 +410,29 @@ class AIDetector {
     } else {
       throw new Error('Unknown model type: ' + this.modelType);
     }
+
+    // Extract & Validate Model Classes (Must have >= 3 Elements + 1 Mandatory Idle class)
+    const rawLabels = await this._fetchModelLabels(metadataURL);
+    this._validateAndExtractElements(rawLabels);
   }
 
   async _fetchModelLabels(metadataURL) {
     let rawLabels = [];
-    try {
-      const resp = await fetch(metadataURL, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        }
-      });
-      if (resp.ok) {
-        const meta = await resp.json();
-        rawLabels = meta.labels || meta.wordLabels || [];
-      }
-    } catch (e) {
-      console.warn("Direct fresh metadata.json fetch failed, falling back:", e);
+    if (this._model && typeof this._model.getClassLabels === 'function') {
+      try { rawLabels = this._model.getClassLabels(); } catch(e) {}
+    } else if (this._recognizer && typeof this._recognizer.wordLabels === 'function') {
+      try { rawLabels = this._recognizer.wordLabels(); } catch(e) {}
     }
 
     if (!rawLabels || rawLabels.length === 0) {
-      if (this._model && typeof this._model.getClassLabels === 'function') {
-        try { rawLabels = this._model.getClassLabels(); } catch(e) {}
-      } else if (this._recognizer && typeof this._recognizer.wordLabels === 'function') {
-        try { rawLabels = this._recognizer.wordLabels(); } catch(e) {}
+      try {
+        const resp = await fetch(metadataURL);
+        if (resp.ok) {
+          const meta = await resp.json();
+          rawLabels = meta.labels || meta.wordLabels || [];
+        }
+      } catch (e) {
+        console.warn("Could not fetch metadata.json directly:", e);
       }
     }
     return rawLabels || [];
@@ -455,13 +445,6 @@ class AIDetector {
       this.lockedElements = [];
       this.modelClasses = [...CONFIG.ELEMENTS, 'Idle'];
       return;
-    }
-
-    // Check minimum class count (Minimum 4 classes: 3 Elements + 1 Idle)
-    if (rawLabels.length < 4) {
-      throw new Error(
-        `โมเดลที่โหลดมามีเพียง ${rawLabels.length} คลาส (${rawLabels.join(', ') || 'ไม่พบคลาส'}) — จำเป็นต้องมีอย่างน้อย 4 คลาสขึ้นไป (ธาตุอย่างน้อย 3 คลาส + คลาส Idle 1 คลาส) หากเพิ่งกดอัปเดตโมเดลใน Teachable Machine ให้รออัปโหลดเสร็จแล้วกดเริ่มใหม่อีกครั้ง`
-      );
     }
 
     const elementsFound = new Set();
@@ -481,7 +464,7 @@ class AIDetector {
       }
     });
 
-    // If no Idle was explicitly identified by keyword, assign an unmapped label as Idle
+    // If no Idle was explicitly identified, assign an unmapped label as Idle
     if (!hasIdle) {
       if (unmappedLabels.length > 0) {
         const idleCandidate = unmappedLabels.pop();
@@ -503,7 +486,7 @@ class AIDetector {
       }
     });
 
-    // If still < 3 elements and we have at least 4 raw classes in total, auto-assign first 3 elements
+    // If still < 3 elements and we have at least 4 raw classes in total
     if (elementsFound.size < 3 && rawLabels.length >= 4) {
       CONFIG.ELEMENTS.slice(0, 3).forEach(el => elementsFound.add(el));
     }
@@ -512,7 +495,7 @@ class AIDetector {
     this.availableElements = detectedList.length > 0 ? detectedList : [...CONFIG.ELEMENTS];
     this.lockedElements    = CONFIG.ELEMENTS.filter(el => !elementsFound.has(el));
     this.modelClasses      = rawLabels;
-    console.log(`[AIDetector] Model Validated! Total Classes: ${rawLabels.length} [${rawLabels.join(', ')}], Available Elements: [${this.availableElements.join(', ')}], Locked: [${this.lockedElements.join(', ')}]`);
+    console.log(`[AIDetector] Model Validated! Available Elements: [${this.availableElements.join(', ')}], Locked: [${this.lockedElements.join(', ')}]`);
   }
 
   async _openCamera() {
