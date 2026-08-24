@@ -1,3 +1,0 @@
-@echo off
-echo Starting Elemental Spell Caster (Next.js + Tailwind)...
-npm.cmd run dev

@@ -1,3 +1,0 @@
-@echo off
-echo Running Next.js Dev Server...
-npm.cmd run dev
